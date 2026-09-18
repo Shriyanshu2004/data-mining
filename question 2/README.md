@@ -172,6 +172,12 @@ A pair becomes a candidate when it shares a complete band. For similarity `s`, t
 
 This favors recall for highly similar notices without comparing every notice with every other notice.
 
+### Survival graph
+
+![Theoretical LSH candidate survival curve](survival_curve.svg)
+
+This graph shows the theoretical survival probability for 64 bands of 4 rows. The red line marks the selected operating threshold of `0.72`. After running `evaluate.py` on the labelled corpus, the generated `survival_curve.svg` is replaced with the empirical curve from the labelled pairs.
+
 The final exact Jaccard merge threshold is `0.72`. The operating policy assigns:
 
 ```text
