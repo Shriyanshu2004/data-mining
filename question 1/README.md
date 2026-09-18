@@ -19,6 +19,22 @@ A reproducible retail sales platform for 12 stores. Daily billing exports are no
 
 The platform was rerun three times. Every run produced `1,120,924` rows with checksum `e0686c3cd5152f92d8b9f9e7ce1dedb1`.
 
+## Platform Architecture
+
+```mermaid
+flowchart LR
+	A[Daily CSV and Parquet exports] --> B[Normalizer and resend audit]
+	B --> C[Partitioned Parquet]
+	C --> D[(MinIO object store)]
+	E[(PostgreSQL master data)] --> F[Trino federated query engine]
+	D --> F
+	F --> G[Dashboard slices]
+	F --> H[Monthly reconciliation]
+	F --> I[Historical price reports]
+```
+
+The graph shows the complete path from billing files to MinIO and PostgreSQL, then through Trino to dashboard, pricing, and finance outputs.
+
 ## Quick Start
 
 ```powershell
