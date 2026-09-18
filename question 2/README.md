@@ -183,6 +183,10 @@ start survival_curve.svg
 
 After the command finishes, open the generated `survival_curve.svg`. It plots measured candidate survival against exact Jaccard similarity and marks the selected threshold. The graph is generated from the actual labelled corpus rather than committed with fabricated values.
 
+![LSH candidate survival curve](survival_curve.svg)
+
+The embedded graph is a configuration preview for 64 bands and 4 rows. Running `evaluate.py` with the exam data replaces it with the empirical labelled-pair graph.
+
 The final exact Jaccard merge threshold is `0.72`. The operating policy assigns:
 
 ```text
