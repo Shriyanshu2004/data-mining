@@ -181,6 +181,8 @@ python evaluate.py $DATA
 start survival_curve.svg
 ```
 
+![Empirical LSH candidate survival curve](survival_curve.svg)
+
 The graph plots measured candidate survival against exact Jaccard similarity and marks the selected threshold. The graph is intentionally generated from the actual labelled corpus rather than committed as a theoretical preview.
 
 The final exact Jaccard merge threshold is `0.72`. The operating policy assigns:
