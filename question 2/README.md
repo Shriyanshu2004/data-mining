@@ -1,0 +1,316 @@
+# SetuBid Tender Deduplication
+
+This project implements a nightly deduplication pipeline for approximately 12,000 public procurement notices collected from many government portals.
+
+The product requirement is:
+
+- show one opportunity as one bidder-facing card;
+- finish the nightly run within 20 minutes;
+- make false merges much more expensive than missed merges; and
+- keep a bidder's card ID stable across reruns.
+
+## 1. Project Files
+
+| File | Purpose |
+| --- | --- |
+| `dedupe_core.py` | Token cleaning, shingles, MinHash, and LSH primitives |
+| `pipeline.py` | Full corpus processing, candidate retrieval, clustering, SQLite storage, and runtime report |
+| `evaluate.py` | Label analysis, feature comparison, MinHash error, threshold costs, candidate recall, and survival curve |
+| `run_report.json` | Measured full-corpus pipeline results |
+| `evaluation.json` | Measured labelled-pair results after evaluation |
+| `survival_curve.svg` | Candidate survival plot |
+| `setubid.sqlite` | Persistent notice, LSH bucket, and card-ID database |
+
+## 2. Input Data
+
+The input directory must have this shape:
+
+```text
+exam-data/
+	notices/
+		one-or-more-files.csv
+		or one-or-more-files.parquet
+	labelled_pairs.csv
+```
+
+The evaluator also accepts the filename `Labelled_paies.csv`, matching the misspelling in the supplied exam description.
+
+Each notice must contain:
+
+```text
+notice_id or notice_is
+portal_id
+published_at
+title
+body
+estimated_value or estimates_value
+closing_date
+```
+
+CSV works without extra packages. Parquet input requires `pyarrow`:
+
+```powershell
+python -m pip install pyarrow
+```
+
+The labelled file is the only source used for supervised measurements. It is not assumed to represent the prevalence of duplicates.
+
+## 3. Quick Start
+
+Open PowerShell in this project directory:
+
+```powershell
+cd "C:\Users\ub02-glab-056\New folder"
+$DATA = "C:\path\to\exam-data"
+```
+
+Run the full pipeline:
+
+```powershell
+python pipeline.py $DATA --output setubid.sqlite
+```
+
+Run the labelled evaluation:
+
+```powershell
+python evaluate.py $DATA
+```
+
+These commands produce:
+
+```text
+setubid.sqlite
+run_report.json
+evaluation.json
+survival_curve.svg
+```
+
+## 4. Section A(a): Mechanical Definition of Similarity
+
+### Decision
+
+Each notice is converted to a set of lower-case word 5-grams from its title and body.
+
+Before shingling, the pipeline removes:
+
+- corpus-level boilerplate words appearing in at least 20 percent of notices;
+- reference-number tokens;
+- date tokens;
+- money markers such as `rs`, `inr`, and `crore`; and
+- standalone numeric tokens.
+
+The similarity score is exact Jaccard similarity:
+
+```text
+J(A, B) = size(A intersection B) / size(A union B)
+```
+
+The implementation is in `content_tokens()` and `shingles()` in `dedupe_core.py`.
+
+### Why word 5-grams?
+
+Word 5-grams retain phrase order and tender language while tolerating punctuation and layout changes between portals. Character n-grams would be more tolerant of spelling and formatting changes but would also preserve more reference-number and boilerplate noise.
+
+The evaluator compares word 3-grams and word 5-grams. The comparison is recorded in `evaluation.json` under `width_3` and `width_5`.
+
+### Demonstration evidence
+
+Run:
+
+```powershell
+python evaluate.py $DATA
+Get-Content evaluation.json
+```
+
+Show the `examples` object for one `same` pair and one `different` pair. It contains scores for `3gram_clean`, `5gram_clean`, and `5gram_raw`.
+
+Say:
+
+> The same pair retains more cleaned 5-gram overlap than the different pair. Removing portal boilerplate reduces accidental similarity. The cost of choosing 5-grams is measured by comparing its classification metrics against the 3-gram alternative.
+
+## 5. Section A(b): Reduced Representation and Estimation Error
+
+### Decision
+
+The exact shingle sets are used only during the current run. The durable reduced representation is a 256-value MinHash signature.
+
+For true Jaccard similarity `s`, the expected standard deviation of the MinHash estimate is:
+
+```text
+sqrt(s * (1 - s) / 256)
+```
+
+The worst-case standard deviation is approximately `0.0313`. This fixes the representation size before implementation rather than choosing an arbitrary round number.
+
+MinHash is implemented by `MinHasher` in `dedupe_core.py`. The seed and hash construction are deterministic, so reruns produce the same signature for the same notice content.
+
+### Demonstration evidence
+
+In `evaluation.json`, show `estimator_mae` and `estimator_max_error`.
+
+These compare exact Jaccard similarity with the 256-value estimate for every labelled pair.
+
+Say:
+
+> The theoretical error budget is based on 256 signature values. The evaluator closes the loop by measuring mean absolute error and maximum absolute error on the trusted labelled pairs, including the difficult tail.
+
+## 6. Section A(c): Sublinear Candidate Retrieval
+
+### Decision
+
+The 256 MinHash values are divided into:
+
+```text
+64 bands x 4 rows = 256 values
+```
+
+A pair becomes a candidate when it shares a complete band. For similarity `s`, the idealised survival probability is:
+
+```text
+1 - (1 - s^4)^64
+```
+
+This favors recall for highly similar notices without comparing every notice with every other notice.
+
+The final exact Jaccard merge threshold is `0.72`. The operating policy assigns:
+
+```text
+false merge cost = 20
+missed merge cost = 1
+```
+
+The weighted cost is `20 * false_merges + missed_merges`.
+
+### Demonstration evidence
+
+Show `survival_curve`, `candidate_recall`, `weighted_threshold_cost`, `selected_threshold`, and `operating_point` in `evaluation.json`.
+
+Open the plot:
+
+```powershell
+start survival_curve.svg
+```
+
+The red vertical line marks the selected threshold.
+
+Say:
+
+> The candidate stage is recall-oriented because losing a genuine duplicate can hide an opportunity. The threshold is selected using the explicit 20:1 business cost, not ordinary accuracy and not the skewed label prevalence.
+
+## 7. Section B(d): Database Design and Access Path
+
+### Schema
+
+`pipeline.py` creates a durable SQLite database with:
+
+#### `notice`
+
+Stores source fields, the encoded MinHash signature, and the assigned `card_id`.
+
+#### `lsh_bucket`
+
+Stores one row per notice and LSH band as `(band, bucket, notice_id)`. The composite primary key and lookup index support equality retrieval by band and bucket.
+
+#### `card_alias`
+
+Maps old card IDs to the current surviving card ID when clusters merge.
+
+### Chosen access method
+
+The chosen access method is a SQLite B-tree equality lookup. SQLite navigates directly to the leaf range for `(band, bucket)` instead of reading every bucket row.
+
+The rejected alternative is a full table scan of all LSH rows. It is slower because it examines unrelated buckets for every lookup and increases the nightly candidate-generation cost.
+
+### Demonstration evidence
+
+Run:
+
+```powershell
+python -c "import json; r=json.load(open('run_report.json')); print(r['database_access'])"
+```
+
+Show the indexed plan, forced scan plan, `indexed_100_probe_seconds`, and `forced_scan_100_probe_seconds`.
+
+## 8. Section B(e): Hotspots and Mitigation
+
+### Observed problem
+
+Some nodal portals reuse a large common preamble. After tokenisation, notices from those portals share many shingles. Those shingles hash into the same LSH buckets, so their candidate lists become much larger than the corpus average.
+
+### Mitigation
+
+The pipeline learns corpus stopwords using a 20 percent document-frequency cutoff and removes them before shingling. This reduces common portal boilerplate while retaining tender-specific phrases.
+
+### Demonstration evidence
+
+In `run_report.json`, show `candidate_mean`, `candidate_p95`, `portal_hotspots`, and `elapsed_seconds`.
+
+In `evaluation.json`, compare `candidate_recall` with `raw_candidate_recall`. The difference is the measured retrieval-quality cost of removing common boilerplate.
+
+## 9. Stable Card IDs and Bookmarks
+
+Card IDs are stable because:
+
+1. New cards are derived deterministically from the earliest member notice.
+2. Existing notices retain their previous card ID on rerun.
+3. If clusters merge, old IDs are written to `card_alias`.
+
+Record an ID:
+
+```powershell
+python -c "import sqlite3; c=sqlite3.connect('setubid.sqlite'); print(c.execute('SELECT notice_id, card_id FROM notice ORDER BY notice_id LIMIT 1').fetchone())"
+```
+
+Run the pipeline again:
+
+```powershell
+python pipeline.py $DATA --output setubid.sqlite
+```
+
+Query the same notice again using the first command. The `card_id` should remain unchanged.
+
+## 10. Expected Full-Corpus Result
+
+The checked-in `run_report.json` records the supplied baseline run:
+
+```text
+notices:          12000
+candidate_pairs:  5408812
+candidate_mean:   901.47
+candidate_p95:    2343
+elapsed_seconds:  60.818
+threshold:        0.72
+permutations:     256
+bands:            64
+rows:             4
+```
+
+The run is below the 1,200-second nightly limit. Runtime can vary with processor, storage, Python version, and SQLite cache state. The report generated by the current run is authoritative for that machine.
+
+## 11. Short Presentation Script
+
+Use this order when presenting:
+
+1. Run `pipeline.py` and show the runtime is below 20 minutes.
+2. Explain cleaned word 5-grams and exact Jaccard similarity.
+3. Explain the 256-value MinHash representation and show measured error.
+4. Open `survival_curve.svg` and explain the 64-by-4 LSH configuration.
+5. Show the 20:1 false-merge cost and selected threshold.
+6. Show SQLite's indexed query plan versus the forced scan.
+7. Show portal hotspots and clean versus raw candidate recall.
+8. Run the pipeline twice and show that the card ID does not change.
+
+Final statement:
+
+> This design replaces an intractable all-pairs comparison with compact MinHash signatures and persistent LSH retrieval. It measures approximation error, candidate survival, database access cost, hotspot distribution, mitigation cost, asymmetric business risk, and card-ID stability. The supplied baseline processes 12,000 notices in 60.818 seconds, below the 20-minute requirement.
+
+## 12. Validation Commands
+
+Run these before submitting:
+
+```powershell
+python -m py_compile dedupe_core.py pipeline.py evaluate.py
+python -c "import pipeline, evaluate; print('imports ok')"
+```
+
+The actual exam data directory must be available before running the full commands in Section 3. This workspace contains the implementation and checked-in baseline report, but not the external `/exam/data` directory itself.

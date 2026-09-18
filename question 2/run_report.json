@@ -1,0 +1,128 @@
+{
+  "notices": 12000,
+  "stopwords": 453,
+  "buckets": 768000,
+  "candidate_pairs": 5408812,
+  "cards": 10195,
+  "elapsed_seconds": 60.818,
+  "candidate_mean": 901.47,
+  "candidate_p95": 2343,
+  "portal_hotspots": [
+    {
+      "portal_id": "P002",
+      "notices": 800,
+      "mean_candidates": 2328.25,
+      "p95_candidates": 2345
+    },
+    {
+      "portal_id": "P001",
+      "notices": 778,
+      "mean_candidates": 2326.73,
+      "p95_candidates": 2345
+    },
+    {
+      "portal_id": "P005",
+      "notices": 768,
+      "mean_candidates": 2325.05,
+      "p95_candidates": 2345
+    },
+    {
+      "portal_id": "P006",
+      "notices": 792,
+      "mean_candidates": 2307.46,
+      "p95_candidates": 2318
+    },
+    {
+      "portal_id": "P004",
+      "notices": 755,
+      "mean_candidates": 2306.73,
+      "p95_candidates": 2318
+    },
+    {
+      "portal_id": "P003",
+      "notices": 772,
+      "mean_candidates": 2305.83,
+      "p95_candidates": 2318
+    },
+    {
+      "portal_id": "P043",
+      "notices": 7,
+      "mean_candidates": 3.86,
+      "p95_candidates": 7
+    },
+    {
+      "portal_id": "P161",
+      "notices": 5,
+      "mean_candidates": 3.6,
+      "p95_candidates": 6
+    },
+    {
+      "portal_id": "P118",
+      "notices": 2,
+      "mean_candidates": 3.5,
+      "p95_candidates": 4
+    },
+    {
+      "portal_id": "P093",
+      "notices": 7,
+      "mean_candidates": 3.29,
+      "p95_candidates": 7
+    },
+    {
+      "portal_id": "P126",
+      "notices": 3,
+      "mean_candidates": 3.0,
+      "p95_candidates": 5
+    },
+    {
+      "portal_id": "P171",
+      "notices": 2,
+      "mean_candidates": 3.0,
+      "p95_candidates": 4
+    },
+    {
+      "portal_id": "P130",
+      "notices": 5,
+      "mean_candidates": 2.8,
+      "p95_candidates": 4
+    },
+    {
+      "portal_id": "P030",
+      "notices": 5,
+      "mean_candidates": 2.8,
+      "p95_candidates": 6
+    },
+    {
+      "portal_id": "P045",
+      "notices": 9,
+      "mean_candidates": 2.67,
+      "p95_candidates": 7
+    }
+  ],
+  "database_access": {
+    "indexed_plan": [
+      [
+        2,
+        0,
+        0,
+        "SEARCH lsh_bucket USING COVERING INDEX sqlite_autoindex_lsh_bucket_1 (band=? AND bucket=?)"
+      ]
+    ],
+    "forced_scan_plan": [
+      [
+        2,
+        0,
+        0,
+        "SCAN lsh_bucket"
+      ]
+    ],
+    "indexed_100_probe_seconds": 0.000296,
+    "forced_scan_100_probe_seconds": 3.371465,
+    "indexed_rows_returned": 100,
+    "forced_scan_rows_returned": 100
+  },
+  "threshold": 0.72,
+  "permutations": 256,
+  "bands": 64,
+  "rows": 4
+}
