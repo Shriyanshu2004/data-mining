@@ -2,6 +2,23 @@
 
 A reproducible retail sales platform for 12 stores. Daily billing exports are normalized to partitioned Parquet in MinIO, master data is stored in PostgreSQL, and Trino federates analytical queries across both systems.
 
+## Verified Result
+
+| Check | Result |
+|---|---:|
+| Stores | 12 |
+| Products | 1,224 |
+| Price revisions | 4,320 |
+| Original source files | 4,389 |
+| Loaded sales rows | 1,120,924 |
+| MinIO Parquet objects | 4,389 |
+| MinIO data size | 42.34 MB |
+| Resend files audited | 68 |
+| Partial resends handled | 8 |
+| Duplicate-key conflicts | 0 |
+
+The platform was rerun three times. Every run produced `1,120,924` rows with checksum `e0686c3cd5152f92d8b9f9e7ce1dedb1`.
+
 ## Quick Start
 
 ```powershell
@@ -13,7 +30,15 @@ docker compose up -d
 .\.venv\Scripts\python.exe scripts\reconcile_finance.py
 ```
 
-Load `data/reference/masters.sql` into PostgreSQL before running federated Trino queries.
+For a fresh setup, copy `.env.example` to `.env`, then load `data/reference/masters.sql` into PostgreSQL before running federated Trino queries:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d
+docker exec -i annapurna-postgres psql -U annapurna -d annapurna < data/reference/masters.sql
+```
+
+The repository includes the processed Parquet data used by the demonstrations. The original raw billing exports are intentionally not committed; `scripts/build_parquet.py` can rebuild the partitions when `SALES_DIR` points to the source export folder.
 
 ## Layout
 
@@ -38,6 +63,36 @@ This lets queries prune by business date and store. Revenue excludes `TAX` and `
 **(e) Cross-system query.** [cross_system.sql](sql/cross_system.sql) joins Hive/MinIO sales directly to PostgreSQL dimensions through Trino. The verified distributed plan showed a Hive scan for `sales_partitioned`, PostgreSQL scans for `products` and `product_categories`, and Trino joins.
 
 **(f) Reconciliation.** January, February, and April through November match except the documented cases. March differs because finance includes a 486,250 institutional invoice outside the till files; July differs because S07 exports for three days are missing; December differs by 50.48 because finance rounds each bill. See [reconciliation results](reports/reconciliation.csv).
+
+## Reconciliation Output
+
+| Month | Folder revenue | Finance revenue | Explanation |
+|---|---:|---:|---|
+| March 2024 | 41,971,649.09 | 42,457,899.09 | External institutional invoice: 486,250.00 |
+| July 2024 | 40,295,160.11 | 40,527,291.81 | S07 source gap for three lost export days |
+| December 2024 | 50,745,259.48 | 50,745,209.00 | Finance rounds each bill to whole rupees |
+
+All other months reconcile to the signed finance figures. The detailed machine-readable result is in [reconciliation.csv](reports/reconciliation.csv).
+
+## Evidence Commands
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_minio.py
+.\.venv\Scripts\python.exe scripts\audit_resends.py
+.\.venv\Scripts\python.exe scripts\check_idempotence.py
+.\.venv\Scripts\python.exe scripts\reconcile_finance.py
+```
+
+Expected key outputs:
+
+```text
+Parquet objects: 4389
+Verification: PASSED
+Audit errors: 0
+Duplicate-key rows in originals: 0
+Duplicate-key rows in resends: 0
+IDEMPOTENCE PASSED
+```
 
 ## Assignment Evidence
 
